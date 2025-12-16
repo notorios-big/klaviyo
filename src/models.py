@@ -7,7 +7,7 @@ These models define the structure for campaigns, metrics, and email content bloc
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
-from typing import Optional
+from typing import Optional, Union
 
 
 class BlockType(str, Enum):
@@ -133,7 +133,14 @@ class FooterBlock:
 
 
 # Union type for all block types
-EmailBlock = ImageBlock | TextBlock | ButtonBlock | SocialBlock | SeparatorBlock | FooterBlock
+EmailBlock = Union[
+    ImageBlock,
+    TextBlock,
+    ButtonBlock,
+    SocialBlock,
+    SeparatorBlock,
+    FooterBlock,
+]
 
 
 @dataclass
