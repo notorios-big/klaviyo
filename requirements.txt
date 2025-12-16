@@ -1,0 +1,27 @@
+# Klaviyo Email Campaign Repository
+# Dependencies for extracting and processing email campaigns
+
+# HTTP requests
+requests>=2.31.0
+
+# HTML parsing
+beautifulsoup4>=4.12.0
+lxml>=5.0.0
+
+# Data validation
+pydantic>=2.0.0
+
+# Environment variables
+python-dotenv>=1.0.0
+
+# Date handling
+python-dateutil>=2.8.0
+
+# Optional: Vision AI for image analysis (uncomment if needed)
+# openai>=1.0.0
+# anthropic>=0.18.0
+
+# Optional: Google Docs integration (uncomment if needed)
+# google-api-python-client>=2.0.0
+# google-auth-httplib2>=0.2.0
+# google-auth-oauthlib>=1.0.0
