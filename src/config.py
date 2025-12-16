@@ -30,8 +30,8 @@ class Config:
     OUTPUT_DIR: Path = Path(os.getenv("OUTPUT_DIR", "output"))
     OUTPUT_FORMAT: str = os.getenv("OUTPUT_FORMAT", "markdown")
 
-    # Rate limiting (requests per second)
-    RATE_LIMIT_DELAY: float = 0.5  # 500ms between requests
+    # Rate limiting - Klaviyo has strict limits, use 3s minimum
+    RATE_LIMIT_DELAY: float = float(os.getenv("RATE_LIMIT_DELAY", "3.0"))
 
     @classmethod
     def validate(cls) -> bool:

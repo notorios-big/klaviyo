@@ -22,6 +22,10 @@ logger = logging.getLogger(__name__)
 class KlaviyoClient:
     """Client for interacting with Klaviyo API."""
 
+    # Retry settings for rate limiting
+    MAX_RETRIES = 4
+    BASE_BACKOFF = 2  # seconds
+
     def __init__(self):
         """Initialize the Klaviyo client."""
         Config.validate()
@@ -37,23 +41,48 @@ class KlaviyoClient:
         params: Optional[dict] = None,
         json_data: Optional[dict] = None,
     ) -> dict:
-        """Make an API request with rate limiting."""
+        """Make an API request with rate limiting and retry logic."""
         url = f"{self.base_url}/{endpoint.lstrip('/')}"
 
-        time.sleep(Config.RATE_LIMIT_DELAY)
+        for attempt in range(self.MAX_RETRIES + 1):
+            # Rate limiting delay (increases with retries)
+            delay = Config.RATE_LIMIT_DELAY * (attempt + 1)
+            time.sleep(delay)
 
-        try:
-            response = self.session.request(
-                method=method,
-                url=url,
-                params=params,
-                json=json_data,
-            )
-            response.raise_for_status()
-            return response.json()
-        except requests.exceptions.RequestException as e:
-            logger.error(f"API request failed: {e}")
-            raise
+            try:
+                response = self.session.request(
+                    method=method,
+                    url=url,
+                    params=params,
+                    json=json_data,
+                )
+
+                # Handle rate limiting with retry
+                if response.status_code == 429:
+                    if attempt < self.MAX_RETRIES:
+                        backoff = self.BASE_BACKOFF * (2 ** attempt)  # 2, 4, 8, 16 seconds
+                        logger.warning(
+                            f"Rate limited (429). Retrying in {backoff}s... "
+                            f"(attempt {attempt + 1}/{self.MAX_RETRIES})"
+                        )
+                        time.sleep(backoff)
+                        continue
+                    else:
+                        response.raise_for_status()
+
+                response.raise_for_status()
+                return response.json()
+
+            except requests.exceptions.RequestException as e:
+                if attempt < self.MAX_RETRIES and "429" in str(e):
+                    backoff = self.BASE_BACKOFF * (2 ** attempt)
+                    logger.warning(f"Request failed, retrying in {backoff}s...")
+                    time.sleep(backoff)
+                    continue
+                logger.error(f"API request failed: {e}")
+                raise
+
+        raise requests.exceptions.RequestException(f"Max retries exceeded for {url}")
 
     def _get(self, endpoint: str, params: Optional[dict] = None) -> dict:
         """Make a GET request."""
