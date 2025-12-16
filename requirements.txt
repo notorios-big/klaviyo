@@ -3,6 +3,7 @@
 
 # HTTP requests
 requests>=2.31.0
+httpx>=0.25.0
 
 # HTML parsing
 beautifulsoup4>=4.12.0
@@ -17,11 +18,15 @@ python-dotenv>=1.0.0
 # Date handling
 python-dateutil>=2.8.0
 
-# Optional: Vision AI for image analysis (uncomment if needed)
-# openai>=1.0.0
-# anthropic>=0.18.0
+# AI Analysis - Install based on your preferred provider
+# At least one is required for main_analysis.py
 
-# Optional: Google Docs integration (uncomment if needed)
-# google-api-python-client>=2.0.0
-# google-auth-httplib2>=0.2.0
-# google-auth-oauthlib>=1.0.0
+# Anthropic (Claude Opus/Sonnet)
+anthropic>=0.40.0
+
+# OpenAI (GPT-4o)
+openai>=1.0.0
+
+# Google Gemini
+google-generativeai>=0.8.0
+Pillow>=10.0.0  # For Gemini image handling

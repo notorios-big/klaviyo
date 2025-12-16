@@ -1,14 +1,15 @@
 # Klaviyo Email Campaign Repository
 
-Extrae campañas de email desde Klaviyo y las convierte a un formato estructurado y legible para análisis con IA.
+Extrae campañas de email desde Klaviyo y las convierte a un formato estructurado para análisis con IA.
 
 ## Objetivo
 
-Construir un repositorio de campañas de email con todas las campañas en un formato estándar, legible para modelos de IA, para análisis de:
+Construir un repositorio de campañas de email para análisis automatizado de:
 
-- Copy y estructura del correo
-- Diseño y elementos visuales
-- Relación entre estructura y métricas (open rate, click rate, conversiones)
+- **Qué asuntos generan más aperturas** (y cuáles no)
+- **Qué contenido vende** (y por qué)
+- **Qué NO funciona** (y por qué) - lo más importante
+- Patrones entre estructura y métricas
 
 ## Instalación
 
@@ -19,131 +20,137 @@ cd klaviyo
 
 # Crear entorno virtual
 python -m venv venv
-source venv/bin/activate  # En Windows: venv\Scripts\activate
+source venv/bin/activate
 
 # Instalar dependencias
 pip install -r requirements.txt
 
-# Configurar variables de entorno
+# Configurar
 cp .env.example .env
-# Editar .env con tu API key de Klaviyo
+# Editar .env con tus API keys
 ```
 
-## Configuración
-
-Edita el archivo `.env`:
+## Configuración (.env)
 
 ```bash
-KLAVIYO_API_KEY=your_private_api_key_here
-MIN_SENDS_THRESHOLD=100  # Mínimo de envíos para incluir campaña
+# Klaviyo (requerido)
+KLAVIYO_API_KEY=your_klaviyo_key
+
+# AI Analysis - al menos uno requerido
+ANTHROPIC_API_KEY=your_anthropic_key   # Para Claude Opus/Sonnet
+OPENAI_API_KEY=your_openai_key         # Para GPT-4o
+GOOGLE_API_KEY=your_google_key         # Para Gemini
 ```
+
+---
 
 ## Uso
 
+### 1. Extraer Campañas (Incremental)
+
 ```bash
-# Procesar todas las campañas
+# Primera vez: extrae todas las campañas
 python main.py
 
-# Modo test (solo primeras 5 campañas)
-python main.py --test
+# Siguiente vez: solo extrae las nuevas
+python main.py
 
-# Limitar número de campañas
-python main.py --limit 10
+# Forzar re-extracción completa
+python main.py --full
 
-# Filtrar por mínimo de envíos
-python main.py --min-sends 500
-
-# Procesar campaña específica
-python main.py --campaign-id abc123
-
-# Guardar reportes individuales por campaña
-python main.py --individual
-
-# Directorio de salida personalizado
-python main.py --output ./mis-reportes
+# Solo ver estadísticas
+python main.py --stats
 ```
 
-## Formato de Salida
+Los datos se guardan en `output/campaigns_data.json` - no se vuelven a descargar.
 
-Cada campaña se convierte a un reporte estructurado con:
+### 2. Analizar con IA
 
-### 1. Identificación
-- ID de campaña
-- Nombre
-- Asunto
-- Preview text
-- Fecha de envío
+```bash
+# Análisis con Claude Opus (mejor calidad)
+python main_analysis.py --model opus
 
-### 2. Métricas
-- Enviados / Entregados
-- Open Rate (aperturas únicas)
-- Click Rate (clicks únicos)
-- Unsubscribes
-- Conversiones y Revenue (si aplica)
+# Análisis con Gemini (más barato)
+python main_analysis.py --model gemini
 
-### 3. Estructura del Correo (bloque por bloque)
+# Análisis con GPT-4o
+python main_analysis.py --model gpt4o
 
-El contenido se convierte a bloques estructurados:
-
-**[IMAGEN]**
-```
-Alt: Descripción alternativa
-URL: https://...
+# Con análisis de imágenes (visión)
+python main_analysis.py --model opus --with-images
 ```
 
-**[TEXTO]**
+### Modelos Disponibles
+
+| Modelo | Provider | Costo | Calidad | Visión |
+|--------|----------|-------|---------|--------|
+| `opus` | Anthropic | $$$ | Excelente | ✓ |
+| `sonnet` | Anthropic | $$ | Muy bueno | ✓ |
+| `gpt4o` | OpenAI | $$ | Muy bueno | ✓ |
+| `gemini` | Google | $ | Bueno | ✓ |
+| `gemini-flash` | Google | ¢ | OK | ✓ |
+
+---
+
+## Output
+
 ```
-Contenido de texto limpio, sin HTML
+output/
+├── campaigns_data.json              # Datos persistentes (no se re-descargan)
+├── campaigns_report_YYYYMMDD.md     # Reporte estructurado de campañas
+└── analysis_opus_YYYYMMDD.md        # Análisis de IA
 ```
 
-**[BOTÓN / CTA]**
-```
-Texto: COMPRAR AHORA
-URL destino: https://...
-Estilo: fondo #FF0000, texto blanco
-```
+### El Análisis Incluye:
 
-**[SOCIAL]**
-```
-INSTAGRAM: https://instagram.com/...
-```
+1. **Asuntos que generan apertura** - patrones, palabras clave, ejemplos
+2. **Asuntos que NO funcionan** - errores comunes, qué evitar
+3. **Contenido que vende** - estructura, CTAs, formato
+4. **Contenido que NO convierte** - desconexiones, errores
+5. **Recomendaciones accionables** - qué hacer y qué NO hacer
+6. **Patrones ocultos** - correlaciones temporales, temas
 
-### 4. Links Detectados
-Lista de todos los enlaces en el correo
-
-### 5. CTAs Principales
-Resumen de los call-to-action más importantes
+---
 
 ## Estructura del Proyecto
 
 ```
 klaviyo/
-├── main.py              # Script principal
-├── requirements.txt     # Dependencias
-├── .env.example        # Ejemplo de configuración
+├── main.py              # Extracción de campañas (incremental)
+├── main_analysis.py     # Análisis con IA
+├── requirements.txt
+├── .env.example
 ├── src/
-│   ├── __init__.py
-│   ├── config.py       # Configuración desde env vars
-│   ├── models.py       # Modelos de datos (Campaign, Blocks, etc)
-│   ├── klaviyo_client.py   # Cliente API de Klaviyo
-│   ├── html_parser.py      # Convertidor HTML → Bloques
-│   └── report_generator.py # Generador de reportes
-└── output/             # Reportes generados
+│   ├── config.py           # Configuración
+│   ├── models.py           # Modelos de datos
+│   ├── klaviyo_client.py   # Cliente API Klaviyo
+│   ├── html_parser.py      # HTML → Bloques
+│   ├── storage.py          # Persistencia JSON
+│   ├── ai_client.py        # Clientes multi-modelo
+│   └── report_generator.py
+└── output/
 ```
 
-## Flujo de Procesamiento
+## Optimización de Tokens
 
-1. **Obtener Campañas** → API `/campaigns/` con paginación
-2. **Obtener Métricas** → API `/campaign-values-reports/`
-3. **Obtener Contenido** → API `/campaigns/{id}/campaign-messages/`
-4. **Obtener Template HTML** → API `/campaign-messages/{id}/template/`
-5. **Parsear HTML** → Convertir a bloques estructurados
-6. **Generar Reporte** → Formato Markdown legible para IA
+El sistema está diseñado para minimizar el uso de tokens:
 
-## Próximos Pasos
+1. **Solo datos relevantes** - No pasa HTML crudo, solo bloques estructurados
+2. **Categorización** - Analiza top/bottom performers, no todas las campañas
+3. **Resúmenes compactos** - Cada campaña se resume en ~500 chars
+4. **Imágenes opcionales** - Solo se incluyen si usas `--with-images`
 
-- [ ] Integración con visión AI para describir imágenes
-- [ ] Exportación a Google Docs
-- [ ] Extracción masiva automatizada
-- [ ] Clustering de campañas similares
-- [ ] Dashboard de insights
+---
+
+## Flujo Completo
+
+```bash
+# 1. Extraer todas las campañas (una vez, luego incremental)
+python main.py
+
+# 2. Analizar con tu modelo preferido
+python main_analysis.py --model opus
+
+# 3. Ver el análisis
+cat output/analysis_opus_*.md
+```
