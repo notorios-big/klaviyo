@@ -67,28 +67,33 @@ Los datos se guardan en `output/campaigns_data.json` - no se vuelven a descargar
 ### 2. Analizar con IA
 
 ```bash
-# Análisis con Claude Opus (mejor calidad)
+# Análisis con GPT-5.2 (recomendado, 400k contexto)
+python main_analysis.py --model gpt-5.2
+
+# Análisis con GPT-5.2 Pro (máxima calidad)
+python main_analysis.py --model gpt-5.2-pro
+
+# Análisis con Claude Opus
 python main_analysis.py --model opus
 
 # Análisis con Gemini (más barato)
 python main_analysis.py --model gemini
 
-# Análisis con GPT-4o
-python main_analysis.py --model gpt4o
-
 # Con análisis de imágenes (visión)
-python main_analysis.py --model opus --with-images
+python main_analysis.py --model gpt-5.2 --with-images
 ```
 
 ### Modelos Disponibles
 
-| Modelo | Provider | Costo | Calidad | Visión |
-|--------|----------|-------|---------|--------|
-| `opus` | Anthropic | $$$ | Excelente | ✓ |
-| `sonnet` | Anthropic | $$ | Muy bueno | ✓ |
-| `gpt4o` | OpenAI | $$ | Muy bueno | ✓ |
-| `gemini` | Google | $ | Bueno | ✓ |
-| `gemini-flash` | Google | ¢ | OK | ✓ |
+| Modelo | Provider | Contexto | Costo | Calidad | Visión |
+|--------|----------|----------|-------|---------|--------|
+| `gpt-5.2` | OpenAI | 400k | $$ | Excelente | ✓ |
+| `gpt-5.2-pro` | OpenAI | 400k | $$$ | Superior | ✓ |
+| `opus` | Anthropic | 200k | $$$ | Excelente | ✓ |
+| `sonnet` | Anthropic | 200k | $$ | Muy bueno | ✓ |
+| `gpt4o` | OpenAI | 128k | $$ | Muy bueno | ✓ |
+| `gemini` | Google | 1M | $ | Bueno | ✓ |
+| `gemini-flash` | Google | 1M | ¢ | OK | ✓ |
 
 ---
 

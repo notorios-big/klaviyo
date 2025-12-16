@@ -9,10 +9,11 @@ Analyzes stored campaigns using AI to identify:
 - Patterns in top vs bottom performers
 
 Usage:
-    python main_analysis.py --model opus       # Use Claude Opus
-    python main_analysis.py --model gemini     # Use Gemini 1.5 Pro
-    python main_analysis.py --model gpt4o      # Use GPT-4o
-    python main_analysis.py --model opus --with-images  # Include image analysis
+    python main_analysis.py --model gpt-5.2       # Use GPT-5.2 (recommended)
+    python main_analysis.py --model gpt-5.2-pro   # Use GPT-5.2 Pro (best quality)
+    python main_analysis.py --model opus          # Use Claude Opus
+    python main_analysis.py --model gemini        # Use Gemini 1.5 Pro
+    python main_analysis.py --model gpt-5.2 --with-images  # Include image analysis
 """
 
 import argparse
@@ -329,17 +330,18 @@ def main() -> int:
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Models available:
-  opus          Claude Opus (best quality, Anthropic)
+  gpt-5.2       GPT-5.2 (recommended, 400k context, OpenAI)
+  gpt-5.2-pro   GPT-5.2 Pro (best quality, OpenAI)
+  opus          Claude Opus (Anthropic)
   sonnet        Claude Sonnet (faster, Anthropic)
   gpt4o         GPT-4o (OpenAI)
-  gpt4-turbo    GPT-4 Turbo (OpenAI)
   gemini        Gemini 1.5 Pro (Google)
   gemini-flash  Gemini 1.5 Flash (faster, Google)
 
 Examples:
-  python main_analysis.py --model opus
-  python main_analysis.py --model gemini --with-images
-  python main_analysis.py --model gpt4o --output ./reports
+  python main_analysis.py --model gpt-5.2
+  python main_analysis.py --model gpt-5.2-pro --with-images
+  python main_analysis.py --model opus --output ./reports
         """
     )
 

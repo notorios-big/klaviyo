@@ -3,8 +3,8 @@ AI Client for multi-model analysis.
 
 Supports:
 - Claude (Anthropic) - opus, sonnet
-- OpenAI - gpt-4o, gpt-4-turbo
-- Google Gemini - gemini-1.5-pro
+- OpenAI - gpt-5.2, gpt-5.2-pro, gpt-4o
+- Google Gemini - gemini-1.5-pro, gemini-2.0-flash
 """
 
 import logging
@@ -108,13 +108,30 @@ class OpenAIClient(AIClient):
     """OpenAI GPT client."""
 
     MODELS = {
+        # GPT-5.2 family (latest, Dec 2025)
+        "gpt5": "gpt-5.2",
+        "gpt-5": "gpt-5.2",
+        "gpt5.2": "gpt-5.2",
+        "gpt-5.2": "gpt-5.2",
+        "gpt-5.2-pro": "gpt-5.2-pro",
+        "gpt5-pro": "gpt-5.2-pro",
+        # GPT-4 family
         "gpt4": "gpt-4o",
         "gpt4o": "gpt-4o",
         "gpt4-turbo": "gpt-4-turbo",
         "o1": "o1",
     }
 
-    def __init__(self, model: str = "gpt4o"):
+    # Context windows per model
+    CONTEXT_SIZES = {
+        "gpt-5.2": 400000,
+        "gpt-5.2-pro": 400000,
+        "gpt-4o": 128000,
+        "gpt-4-turbo": 128000,
+        "o1": 200000,
+    }
+
+    def __init__(self, model: str = "gpt-5.2"):
         try:
             import openai
         except ImportError:
@@ -129,11 +146,11 @@ class OpenAIClient(AIClient):
 
     @property
     def supports_vision(self) -> bool:
-        return "gpt-4" in self.model or "o1" in self.model
+        return True  # All modern OpenAI models support vision
 
     @property
     def max_tokens(self) -> int:
-        return 128000
+        return self.CONTEXT_SIZES.get(self.model, 128000)
 
     def analyze(self, prompt: str, images: Optional[list[str]] = None) -> str:
         content = []
@@ -225,12 +242,13 @@ def get_ai_client(provider: str, model: Optional[str] = None) -> AIClient:
     # Map common names to providers
     if provider in ("opus", "sonnet", "claude"):
         return AnthropicClient(model=model or provider)
-    elif provider in ("gpt4", "gpt4o", "gpt4-turbo", "chatgpt", "openai", "o1"):
+    elif provider in ("gpt5", "gpt-5", "gpt5.2", "gpt-5.2", "gpt-5.2-pro", "gpt5-pro",
+                      "gpt4", "gpt4o", "gpt4-turbo", "chatgpt", "openai", "o1"):
         return OpenAIClient(model=model or provider)
     elif provider in ("gemini", "gemini-pro", "gemini-flash", "google"):
         return GeminiClient(model=model or provider)
     else:
         raise ValueError(
             f"Unknown provider: {provider}. "
-            "Use: opus, sonnet, gpt4, gpt4o, gemini, gemini-flash"
+            "Use: opus, sonnet, gpt-5.2, gpt-5.2-pro, gpt4o, gemini"
         )
