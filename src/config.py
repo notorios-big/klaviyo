@@ -20,7 +20,8 @@ class Config:
     KLAVIYO_API_REVISION: str = os.getenv("KLAVIYO_API_REVISION", "2024-02-15")
 
     # Processing
-    MIN_SENDS_THRESHOLD: int = int(os.getenv("MIN_SENDS_THRESHOLD", "100"))
+    MIN_SENDS_THRESHOLD: int = int(os.getenv("MIN_SENDS_THRESHOLD", "20"))
+    IGNORE_SENDS_THRESHOLD: int = int(os.getenv("IGNORE_SENDS_THRESHOLD", "20"))
     TEST_MODE_LIMIT: int = int(os.getenv("TEST_MODE_LIMIT", "0"))
 
     # Conversion metric for Klaviyo reports

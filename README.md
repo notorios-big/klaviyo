@@ -36,6 +36,10 @@ cp .env.example .env
 # Klaviyo (requerido)
 KLAVIYO_API_KEY=your_klaviyo_key
 
+# Filtro de campañas
+MIN_SENDS_THRESHOLD=20
+IGNORE_SENDS_THRESHOLD=20
+
 # AI Analysis - al menos uno requerido
 ANTHROPIC_API_KEY=your_anthropic_key   # Para Claude Opus/Sonnet
 OPENAI_API_KEY=your_openai_key         # Para GPT-4o
@@ -60,9 +64,18 @@ python main.py --full
 
 # Solo ver estadísticas
 python main.py --stats
+
+# Preprocesar imágenes (convierte imágenes a párrafos con IA, cacheado)
+python main.py --describe-images
+
+# Backfill de imágenes para campañas ya guardadas (sin llamadas a Klaviyo)
+python main.py --report --describe-images
 ```
 
 Los datos se guardan en `output/campaigns_data.json` - no se vuelven a descargar.
+Las campañas con menos de `IGNORE_SENDS_THRESHOLD` envíos se guardan en `output/campaigns_ignored.json` para no volver a consultarlas.
+
+Si ves errores `429` (rate limit), usa `--limit` para procesar por tandas y/o sube `RATE_LIMIT_DELAY` en tu `.env`.
 
 ### 2. Analizar con IA
 
@@ -102,7 +115,9 @@ python main_analysis.py --model gpt-5.2 --with-images
 ```
 output/
 ├── campaigns_data.json              # Datos persistentes (no se re-descargan)
-├── campaigns_report_YYYYMMDD.md     # Reporte estructurado de campañas
+├── campaigns_ignored.json           # Campañas ignoradas (pocos envíos, etc.)
+├── image_descriptions.json          # Cache URL→descripción (visión)
+├── campaigns_report.md              # Reporte estructurado consolidado
 └── analysis_opus_YYYYMMDD.md        # Análisis de IA
 ```
 

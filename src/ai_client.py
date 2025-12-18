@@ -10,6 +10,7 @@ Supports:
 import logging
 import os
 from abc import ABC, abstractmethod
+import base64
 from typing import Optional
 
 logger = logging.getLogger(__name__)
@@ -156,19 +157,44 @@ class OpenAIClient(AIClient):
         content = []
 
         if images and self.supports_vision:
+            try:
+                import requests
+            except ImportError:
+                requests = None
+
             for img_url in images[:10]:
-                content.append({
-                    "type": "image_url",
-                    "image_url": {"url": img_url}
-                })
+                data_url = None
+                if requests and img_url and img_url.startswith("http"):
+                    try:
+                        resp = requests.get(img_url, timeout=15)
+                        if resp.status_code == 200:
+                            content_type = resp.headers.get("content-type", "image/jpeg")
+                            encoded = base64.b64encode(resp.content).decode("utf-8")
+                            data_url = f"data:{content_type};base64,{encoded}"
+                    except Exception as e:
+                        logger.warning(f"Failed to fetch image {img_url}: {e}")
+
+                if data_url:
+                    content.append(
+                        {"type": "image_url", "image_url": {"url": data_url}}
+                    )
+                else:
+                    logger.warning(f"Skipping image (unfetchable): {img_url}")
 
         content.append({"type": "text", "text": prompt})
 
-        response = self.client.chat.completions.create(
-            model=self.model,
-            messages=[{"role": "user", "content": content}],
-            max_tokens=8192,
-        )
+        request_kwargs = {
+            "model": self.model,
+            "messages": [{"role": "user", "content": content}],
+        }
+
+        # Newer OpenAI models (e.g. GPT-5.*) require `max_completion_tokens`.
+        if self.model.startswith(("gpt-5", "o1")):
+            request_kwargs["max_completion_tokens"] = 8192
+        else:
+            request_kwargs["max_tokens"] = 8192
+
+        response = self.client.chat.completions.create(**request_kwargs)
         return response.choices[0].message.content
 
 

@@ -12,6 +12,7 @@ from typing import Optional, Iterator
 from dateutil import parser as date_parser
 
 import requests
+from requests.exceptions import HTTPError
 
 from .config import Config
 from .models import Campaign, CampaignMetrics
@@ -33,6 +34,17 @@ class KlaviyoClient:
         self.headers = Config.get_headers()
         self.session = requests.Session()
         self.session.headers.update(self.headers)
+        self._last_request_at: float = 0.0
+        self._delay_multiplier: float = 1.0
+
+    def _sleep_for_rate_limit(self) -> None:
+        """Enforce a minimum delay between requests (adaptive)."""
+        min_delay = max(0.0, Config.RATE_LIMIT_DELAY) * self._delay_multiplier
+        now = time.monotonic()
+        elapsed = now - self._last_request_at
+        to_sleep = min_delay - elapsed
+        if to_sleep > 0:
+            time.sleep(to_sleep)
 
     def _request(
         self,
@@ -45,9 +57,8 @@ class KlaviyoClient:
         url = f"{self.base_url}/{endpoint.lstrip('/')}"
 
         for attempt in range(self.MAX_RETRIES + 1):
-            # Rate limiting delay (increases with retries)
-            delay = Config.RATE_LIMIT_DELAY * (attempt + 1)
-            time.sleep(delay)
+            self._sleep_for_rate_limit()
+            self._last_request_at = time.monotonic()
 
             try:
                 response = self.session.request(
@@ -59,8 +70,15 @@ class KlaviyoClient:
 
                 # Handle rate limiting with retry
                 if response.status_code == 429:
+                    retry_after = response.headers.get("Retry-After")
+                    retry_after_s = float(retry_after) if retry_after else None
                     if attempt < self.MAX_RETRIES:
-                        backoff = self.BASE_BACKOFF * (2 ** attempt)  # 2, 4, 8, 16 seconds
+                        backoff = (
+                            retry_after_s
+                            if retry_after_s is not None
+                            else self.BASE_BACKOFF * (2 ** attempt)  # 2, 4, 8, 16 seconds
+                        )
+                        self._delay_multiplier = min(8.0, self._delay_multiplier * 1.5)
                         logger.warning(
                             f"Rate limited (429). Retrying in {backoff}s... "
                             f"(attempt {attempt + 1}/{self.MAX_RETRIES})"
@@ -71,6 +89,61 @@ class KlaviyoClient:
                         response.raise_for_status()
 
                 response.raise_for_status()
+                # Successful request: slowly relax delay multiplier
+                self._delay_multiplier = max(1.0, self._delay_multiplier * 0.95)
+                return response.json()
+
+            except requests.exceptions.RequestException as e:
+                if attempt < self.MAX_RETRIES and "429" in str(e):
+                    backoff = self.BASE_BACKOFF * (2 ** attempt)
+                    logger.warning(f"Request failed, retrying in {backoff}s...")
+                    time.sleep(backoff)
+                    continue
+                logger.error(f"API request failed: {e}")
+                raise
+
+        raise requests.exceptions.RequestException(f"Max retries exceeded for {url}")
+
+    def _request_url(
+        self,
+        method: str,
+        url: str,
+        params: Optional[dict] = None,
+        json_data: Optional[dict] = None,
+    ) -> dict:
+        """Make a request to a full URL (pagination), with same retry/limit handling."""
+        for attempt in range(self.MAX_RETRIES + 1):
+            self._sleep_for_rate_limit()
+            self._last_request_at = time.monotonic()
+
+            try:
+                response = self.session.request(
+                    method=method,
+                    url=url,
+                    params=params,
+                    json=json_data,
+                )
+
+                if response.status_code == 429:
+                    retry_after = response.headers.get("Retry-After")
+                    retry_after_s = float(retry_after) if retry_after else None
+                    if attempt < self.MAX_RETRIES:
+                        backoff = (
+                            retry_after_s
+                            if retry_after_s is not None
+                            else self.BASE_BACKOFF * (2 ** attempt)
+                        )
+                        self._delay_multiplier = min(8.0, self._delay_multiplier * 1.5)
+                        logger.warning(
+                            f"Rate limited (429). Retrying in {backoff}s... "
+                            f"(attempt {attempt + 1}/{self.MAX_RETRIES})"
+                        )
+                        time.sleep(backoff)
+                        continue
+                    response.raise_for_status()
+
+                response.raise_for_status()
+                self._delay_multiplier = max(1.0, self._delay_multiplier * 0.95)
                 return response.json()
 
             except requests.exceptions.RequestException as e:
@@ -121,12 +194,25 @@ class KlaviyoClient:
         while True:
             if next_url:
                 # For pagination, use the full URL
-                time.sleep(Config.RATE_LIMIT_DELAY)
-                response = self.session.get(next_url)
-                response.raise_for_status()
-                data = response.json()
+                data = self._request_url("GET", next_url)
             else:
-                data = self._get("campaigns/", params=params)
+                try:
+                    data = self._get("campaigns/", params=params)
+                except HTTPError as e:
+                    status_code = getattr(getattr(e, "response", None), "status_code", None)
+                    if status_code != 400:
+                        raise
+
+                    # Klaviyo can be picky about query params depending on revision/account.
+                    # Retry with a more compatible, minimal query.
+                    logger.warning(
+                        "Campaign list request returned 400. Retrying with minimal params..."
+                    )
+                    minimal_params = {
+                        "filter": params["filter"],
+                        "fields[campaign]": params["fields[campaign]"],
+                    }
+                    data = self._get("campaigns/", params=minimal_params)
 
             campaigns = data.get("data", [])
             included = data.get("included", [])
@@ -158,6 +244,7 @@ class KlaviyoClient:
                     "campaign_id": campaign["id"],
                     "name": attrs.get("name", "Sin nombre"),
                     "subject": message_attrs.get("label", attrs.get("name", "Sin asunto")),
+                    "preview_text": "",
                     "status": attrs.get("status"),
                     "send_time": attrs.get("send_time") or attrs.get("created_at"),
                     "message_id": message_id,
@@ -178,6 +265,16 @@ class KlaviyoClient:
 
         Returns:
             CampaignMetrics object with campaign statistics
+        """
+        metrics, _ok = self.try_get_campaign_metrics(campaign_id)
+        return metrics
+
+    def try_get_campaign_metrics(self, campaign_id: str) -> tuple[CampaignMetrics, bool]:
+        """
+        Get metrics for a specific campaign, returning a success flag.
+
+        Returns:
+            (CampaignMetrics, ok)
         """
         payload = {
             "data": {
@@ -210,34 +307,37 @@ class KlaviyoClient:
             results = data.get("data", {}).get("attributes", {}).get("results", [])
 
             if not results:
-                return CampaignMetrics()
+                return CampaignMetrics(), True
 
             stats = results[0].get("statistics", {})
             recipients = int(stats.get("recipients", 0) or stats.get("delivered", 0) or 0)
 
-            return CampaignMetrics(
-                recipients=recipients,
-                delivered=int(stats.get("delivered", 0) or 0),
-                opens=int(stats.get("opens", 0) or 0),
-                opens_unique=int(stats.get("opens_unique", 0) or 0),
-                open_rate=float(stats.get("open_rate", 0) or 0),
-                clicks=int(stats.get("clicks", 0) or 0),
-                clicks_unique=int(stats.get("clicks_unique", 0) or 0),
-                click_rate=float(stats.get("click_rate", 0) or 0),
-                bounced=int(stats.get("bounced", 0) or 0),
-                unsubscribes=int(stats.get("unsubscribes", 0) or 0),
-                spam_complaints=int(stats.get("spam_complaints", 0) or 0),
-                conversions=int(stats.get("conversions", 0) or 0),
-                conversion_value=float(stats.get("conversion_value", 0) or 0),
-                conversion_rate=(
-                    int(stats.get("conversions", 0) or 0) / recipients
-                    if recipients > 0
-                    else 0
+            return (
+                CampaignMetrics(
+                    recipients=recipients,
+                    delivered=int(stats.get("delivered", 0) or 0),
+                    opens=int(stats.get("opens", 0) or 0),
+                    opens_unique=int(stats.get("opens_unique", 0) or 0),
+                    open_rate=float(stats.get("open_rate", 0) or 0),
+                    clicks=int(stats.get("clicks", 0) or 0),
+                    clicks_unique=int(stats.get("clicks_unique", 0) or 0),
+                    click_rate=float(stats.get("click_rate", 0) or 0),
+                    bounced=int(stats.get("bounced", 0) or 0),
+                    unsubscribes=int(stats.get("unsubscribes", 0) or 0),
+                    spam_complaints=int(stats.get("spam_complaints", 0) or 0),
+                    conversions=int(stats.get("conversions", 0) or 0),
+                    conversion_value=float(stats.get("conversion_value", 0) or 0),
+                    conversion_rate=(
+                        int(stats.get("conversions", 0) or 0) / recipients
+                        if recipients > 0
+                        else 0
+                    ),
                 ),
+                True,
             )
         except Exception as e:
             logger.warning(f"Failed to get metrics for campaign {campaign_id}: {e}")
-            return CampaignMetrics()
+            return CampaignMetrics(), False
 
     def get_campaign_content(self, campaign_id: str) -> dict:
         """
@@ -299,7 +399,12 @@ class KlaviyoClient:
             logger.warning(f"Failed to get template for message {message_id}: {e}")
             return {}
 
-    def get_full_campaign(self, campaign_data: dict) -> Campaign:
+    def get_full_campaign(
+        self,
+        campaign_data: dict,
+        *,
+        metrics: Optional[CampaignMetrics] = None,
+    ) -> Campaign:
         """
         Get complete campaign data including metrics and content.
 
@@ -313,10 +418,16 @@ class KlaviyoClient:
         message_id = campaign_data.get("message_id")
 
         # Get metrics
-        metrics = self.get_campaign_metrics(campaign_id)
+        if metrics is None:
+            metrics = self.get_campaign_metrics(campaign_id)
 
-        # Get content details
-        content = self.get_campaign_content(campaign_id)
+        # Get content details (subject/preview, and potentially a better message_id)
+        content = {}
+        try:
+            content = self.get_campaign_content(campaign_id)
+        except Exception:
+            content = {}
+
         if content.get("message_id"):
             message_id = content["message_id"]
 
@@ -339,7 +450,7 @@ class KlaviyoClient:
             message_id=message_id,
             name=campaign_data.get("name", ""),
             subject=content.get("subject") or campaign_data.get("subject", ""),
-            preview_text=content.get("preview_text", ""),
+            preview_text=content.get("preview_text") or campaign_data.get("preview_text", ""),
             send_time=send_time,
             metrics=metrics,
             html_original=html,

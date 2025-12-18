@@ -17,6 +17,8 @@ from .models import Campaign, CampaignMetrics
 logger = logging.getLogger(__name__)
 
 DEFAULT_STORAGE_FILE = "campaigns_data.json"
+DEFAULT_IGNORED_FILE = "campaigns_ignored.json"
+DEFAULT_IMAGE_DESCRIPTIONS_FILE = "image_descriptions.json"
 
 
 class CampaignStorage:
@@ -188,4 +190,142 @@ class CampaignStorage:
             "avg_open_rate": avg_open,
             "avg_click_rate": avg_click,
             "total_sends": total_sends,
+        }
+
+
+class CampaignIgnoreStorage:
+    """JSON-based storage for campaigns that should not be processed again."""
+
+    def __init__(self, filepath: Optional[Path] = None):
+        self.filepath = filepath or (Config.OUTPUT_DIR / DEFAULT_IGNORED_FILE)
+        self.filepath.parent.mkdir(parents=True, exist_ok=True)
+        self._data: dict = self._load()
+
+    def _load(self) -> dict:
+        if not self.filepath.exists():
+            return {
+                "metadata": {
+                    "created_at": datetime.now().isoformat(),
+                    "last_updated": datetime.now().isoformat(),
+                    "total_ignored": 0,
+                },
+                "ignored": {},
+            }
+
+        try:
+            with open(self.filepath, "r", encoding="utf-8") as f:
+                data = json.load(f)
+                logger.info(
+                    f"Loaded {len(data.get('ignored', {}))} ignored campaigns from storage"
+                )
+                return data
+        except (json.JSONDecodeError, IOError) as e:
+            logger.warning(f"Failed to load ignored storage file: {e}. Starting fresh.")
+            return {
+                "metadata": {
+                    "created_at": datetime.now().isoformat(),
+                    "last_updated": datetime.now().isoformat(),
+                    "total_ignored": 0,
+                },
+                "ignored": {},
+            }
+
+    def save(self) -> None:
+        self._data["metadata"]["last_updated"] = datetime.now().isoformat()
+        self._data["metadata"]["total_ignored"] = len(self._data["ignored"])
+
+        with open(self.filepath, "w", encoding="utf-8") as f:
+            json.dump(self._data, f, ensure_ascii=False, indent=2)
+
+        logger.info(
+            f"Saved {len(self._data['ignored'])} ignored campaigns to {self.filepath}"
+        )
+
+    def is_ignored(self, campaign_id: str) -> bool:
+        return campaign_id in self._data["ignored"]
+
+    def get_all_campaign_ids(self) -> set[str]:
+        return set(self._data["ignored"].keys())
+
+    def add_ignored(
+        self,
+        campaign_id: str,
+        *,
+        name: str = "",
+        recipients: Optional[int] = None,
+        reason: str = "",
+        send_time: Optional[str] = None,
+    ) -> None:
+        self._data["ignored"][campaign_id] = {
+            "campaign_id": campaign_id,
+            "name": name,
+            "recipients": recipients,
+            "send_time": send_time,
+            "reason": reason,
+            "ignored_at": datetime.now().isoformat(),
+        }
+
+    def get_stats(self) -> dict:
+        return {"total_ignored": len(self._data["ignored"])}
+
+
+class ImageDescriptionStorage:
+    """JSON-based cache for image URL -> description."""
+
+    def __init__(self, filepath: Optional[Path] = None):
+        self.filepath = filepath or (Config.OUTPUT_DIR / DEFAULT_IMAGE_DESCRIPTIONS_FILE)
+        self.filepath.parent.mkdir(parents=True, exist_ok=True)
+        self._data: dict = self._load()
+
+    def _load(self) -> dict:
+        if not self.filepath.exists():
+            return {
+                "metadata": {
+                    "created_at": datetime.now().isoformat(),
+                    "last_updated": datetime.now().isoformat(),
+                    "total_images": 0,
+                },
+                "descriptions": {},
+            }
+
+        try:
+            with open(self.filepath, "r", encoding="utf-8") as f:
+                data = json.load(f)
+                logger.info(
+                    f"Loaded {len(data.get('descriptions', {}))} image descriptions from storage"
+                )
+                return data
+        except (json.JSONDecodeError, IOError) as e:
+            logger.warning(f"Failed to load image description file: {e}. Starting fresh.")
+            return {
+                "metadata": {
+                    "created_at": datetime.now().isoformat(),
+                    "last_updated": datetime.now().isoformat(),
+                    "total_images": 0,
+                },
+                "descriptions": {},
+            }
+
+    def save(self) -> None:
+        self._data["metadata"]["last_updated"] = datetime.now().isoformat()
+        self._data["metadata"]["total_images"] = len(self._data["descriptions"])
+
+        with open(self.filepath, "w", encoding="utf-8") as f:
+            json.dump(self._data, f, ensure_ascii=False, indent=2)
+
+        logger.info(
+            f"Saved {len(self._data['descriptions'])} image descriptions to {self.filepath}"
+        )
+
+    def get(self, url: str) -> Optional[str]:
+        entry = self._data["descriptions"].get(url)
+        if not entry:
+            return None
+        return entry.get("description")
+
+    def set(self, url: str, description: str) -> None:
+        self._data["descriptions"][url] = {
+            "url": url,
+            "description": description,
+            "updated_at": datetime.now().isoformat(),
         }
